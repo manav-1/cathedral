@@ -1,12 +1,15 @@
 import { useState, useCallback, useMemo } from "react";
 import {
   buildBoard, isValidMove, getValidMoves,
-  PLAYERS, ARCH_PATH, CX, SPRING_Y, ARCH_R
+  getPlayers, ARCH_PATH, CX, SPRING_Y, ARCH_R
 } from "./gameLogic.js";
 import styles from "./CathedralGame.module.css";
 
 export default function CathedralGame() {
+  const [playerCount, setPlayerCount] = useState(2);
   const [boardSeed, setBoardSeed] = useState(42);
+
+  const players = useMemo(() => getPlayers(playerCount), [playerCount]);
   const regions = useMemo(() => buildBoard(boardSeed), [boardSeed]);
   const mkClaimed = useCallback(
     () => Object.fromEntries(regions.map(r => [r.id, null])),
@@ -18,20 +21,34 @@ export default function CathedralGame() {
   const [hovered, setHovered] = useState(null);
   const [invalid, setInvalid] = useState(null);
   const [gameOver, setGameOver] = useState(false);
-  const [scores, setScores] = useState([0, 0]);
+  const [scores, setScores] = useState(() => new Array(playerCount).fill(0));
+  const [eliminated, setEliminated] = useState(() => new Array(playerCount).fill(false));
   const [lastClaimed, setLastClaimed] = useState(null);
   const [prevSeed, setPrevSeed] = useState(boardSeed);
+  const [prevPlayerCount, setPrevPlayerCount] = useState(playerCount);
 
-  if (prevSeed !== boardSeed) {
+  // Reset when board seed or player count changes
+  if (prevSeed !== boardSeed || prevPlayerCount !== playerCount) {
     setPrevSeed(boardSeed);
+    setPrevPlayerCount(playerCount);
     setClaimed(mkClaimed());
     setCurrentPlayer(0);
     setHovered(null);
     setInvalid(null);
     setGameOver(false);
-    setScores([0, 0]);
+    setScores(new Array(playerCount).fill(0));
+    setEliminated(new Array(playerCount).fill(false));
     setLastClaimed(null);
   }
+
+  // Find the next active (non-eliminated) player who has valid moves
+  const findNextPlayer = useCallback((from, nc, elim) => {
+    for (let i = 1; i <= playerCount; i++) {
+      const p = (from + i) % playerCount;
+      if (!elim[p] && getValidMoves(p, nc, regions).length) return p;
+    }
+    return -1; // no one can move
+  }, [playerCount, regions]);
 
   const handleClick = useCallback((id) => {
     if (gameOver) return;
@@ -43,16 +60,33 @@ export default function CathedralGame() {
     const nc = { ...claimed, [id]: currentPlayer };
     const ns = [...scores];
     ns[currentPlayer]++;
-    // End game immediately when either player has no valid moves
-    let next = 1 - currentPlayer;
-    const nextHasMoves = getValidMoves(next, nc, regions).length > 0;
-    const currentHasMoves = getValidMoves(currentPlayer, nc, regions).length > 0;
-    if (!nextHasMoves || !currentHasMoves) {
-      setClaimed(nc); setScores(ns); setLastClaimed(id); setGameOver(true);
+
+    // Eliminate any players who now have no valid moves
+    const ne = [...eliminated];
+    for (let p = 0; p < playerCount; p++) {
+      if (!ne[p] && !getValidMoves(p, nc, regions).length) {
+        ne[p] = true;
+      }
+    }
+
+    // Count active players remaining
+    const activePlayers = ne.filter(e => !e).length;
+
+    if (activePlayers === 0) {
+      // All players eliminated — game over, determine winner by score
+      setClaimed(nc); setScores(ns); setEliminated(ne); setLastClaimed(id); setGameOver(true);
       return;
     }
-    setClaimed(nc); setScores(ns); setLastClaimed(id); setCurrentPlayer(next);
-  }, [claimed, currentPlayer, gameOver, scores, regions]);
+
+    // Find next active player
+    const next = findNextPlayer(currentPlayer, nc, ne);
+    if (next === -1) {
+      setClaimed(nc); setScores(ns); setEliminated(ne); setLastClaimed(id); setGameOver(true);
+      return;
+    }
+
+    setClaimed(nc); setScores(ns); setEliminated(ne); setLastClaimed(id); setCurrentPlayer(next);
+  }, [claimed, currentPlayer, gameOver, scores, eliminated, regions, playerCount, findNextPlayer]);
 
   const resetGame = useCallback(() => {
     setClaimed(mkClaimed());
@@ -60,16 +94,35 @@ export default function CathedralGame() {
     setHovered(null);
     setInvalid(null);
     setGameOver(false);
-    setScores([0, 0]);
+    setScores(new Array(playerCount).fill(0));
+    setEliminated(new Array(playerCount).fill(false));
     setLastClaimed(null);
-  }, [mkClaimed]);
+  }, [mkClaimed, playerCount]);
 
   const newGame = () => setBoardSeed(Math.floor(Math.random() * 99999));
 
+  const changePlayerCount = (n) => {
+    setPlayerCount(n);
+    setBoardSeed(Math.floor(Math.random() * 99999));
+  };
+
   const validMoves = gameOver ? [] : getValidMoves(currentPlayer, claimed, regions);
-  const winner = gameOver
-    ? (scores[0] > scores[1] ? 0 : scores[1] > scores[0] ? 1 : null)
-    : null;
+
+  // Determine results — find top scorers and losers
+  const results = useMemo(() => {
+    if (!gameOver) return { winners: [], losers: [], maxScore: 0, isTie: false };
+    const maxScore = Math.max(...scores);
+    const winners = [];
+    const losers = [];
+    for (let i = 0; i < playerCount; i++) {
+      if (scores[i] === maxScore) winners.push(i);
+      else losers.push(i);
+    }
+    return { winners, losers, maxScore, isTie: winners.length > 1 };
+  }, [gameOver, scores, playerCount]);
+
+  const winner = results.winners.length === 1 ? results.winners[0] : null;
+
   const cp = currentPlayer;
 
   return (
@@ -84,35 +137,58 @@ export default function CathedralGame() {
         <p className={styles.subtitle}>Stained Glass Territory</p>
       </header>
 
+      {/* Player Count Selector */}
+      <div className={styles.playerSelect}>
+        {[2, 3, 4].map(n => (
+          <button
+            key={n}
+            className={`${styles.playerBtn} ${playerCount === n ? styles.playerBtnActive : ""}`}
+            onClick={() => changePlayerCount(n)}
+          >
+            {n} Players
+          </button>
+        ))}
+      </div>
+
       {/* Scoreboard */}
       <div className={styles.scoreboard}>
-        {PLAYERS.map(p => (
-          <div
-            key={p.id}
-            className={`${styles.card} ${!gameOver && cp === p.id ? styles.cardActive : ""}`}
-            style={{
-              borderColor: p.color,
-              opacity: !gameOver && cp !== p.id ? 0.45 : 1,
-              boxShadow: !gameOver && cp === p.id
-                ? `0 0 24px ${p.glow}44, inset 0 0 10px ${p.glow}12` : "none",
-            }}
-          >
-            <div className={styles.dot} style={{ background: p.color, boxShadow: `0 0 8px ${p.glow}` }} />
-            <div>
-              <div className={styles.pname}>{p.name}</div>
-              <div className={styles.pscore} style={{ color: p.color }}>{scores[p.id]}</div>
+        {players.map(p => {
+          const isElim = eliminated[p.id];
+          const isActive = !gameOver && cp === p.id;
+          return (
+            <div
+              key={p.id}
+              className={`${styles.card} ${isActive ? styles.cardActive : ""} ${isElim ? styles.cardEliminated : ""}`}
+              style={{
+                borderColor: isElim ? "#333" : p.color,
+                opacity: isElim ? 0.35 : (!gameOver && cp !== p.id ? 0.45 : 1),
+                boxShadow: isActive
+                  ? `0 0 24px ${p.glow}44, inset 0 0 10px ${p.glow}12` : "none",
+              }}
+            >
+              <div className={styles.dot} style={{ background: isElim ? "#444" : p.color, boxShadow: isElim ? "none" : `0 0 8px ${p.glow}` }} />
+              <div>
+                <div className={styles.pname}>{p.name}</div>
+                <div className={styles.pscore} style={{ color: isElim ? "#555" : p.color }}>{scores[p.id]}</div>
+              </div>
+              {isActive && (
+                <div className={styles.pip} style={{ background: p.color }}>YOUR TURN</div>
+              )}
+              {isElim && !gameOver && (
+                <div className={styles.pip} style={{ background: "#444" }}>OUT</div>
+              )}
+              {gameOver && winner === p.id && (
+                <div className={styles.pip} style={{ background: p.color }}>WINNER ✦</div>
+              )}
+              {gameOver && results.isTie && results.winners.includes(p.id) && (
+                <div className={styles.pip} style={{ background: p.color }}>DRAW</div>
+              )}
+              {gameOver && results.losers.includes(p.id) && (
+                <div className={styles.pip} style={{ background: "#444" }}>LOST</div>
+              )}
             </div>
-            {!gameOver && cp === p.id && (
-              <div className={styles.pip} style={{ background: p.color }}>YOUR TURN</div>
-            )}
-            {gameOver && winner === p.id && (
-              <div className={styles.pip} style={{ background: p.color }}>WINNER ✦</div>
-            )}
-            {gameOver && winner === null && p.id === 0 && (
-              <div className={styles.pip} style={{ background: "#666" }}>DRAW</div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Board */}
@@ -139,9 +215,9 @@ export default function CathedralGame() {
               const isLast = lastClaimed === r.id;
 
               let fill = "#1e1408", stroke = "#8a6428", sw = 1.2;
-              if (owner !== null) { fill = PLAYERS[owner].color; stroke = "#ffffff55"; sw = 1.5; }
+              if (owner !== null) { fill = players[owner].color; stroke = "#ffffff55"; sw = 1.5; }
               else if (isInv) { fill = "#4a0000"; stroke = "#ff2020"; sw = 2.5; }
-              else if (isHov && isVal) { fill = PLAYERS[cp].light; stroke = PLAYERS[cp].color; sw = 2; }
+              else if (isHov && isVal) { fill = players[cp].light; stroke = players[cp].color; sw = 2; }
               else if (isHov) { fill = "#250808"; stroke = "#551010"; sw = 2; }
 
               return (
@@ -177,12 +253,12 @@ export default function CathedralGame() {
         {gameOver ? (
           <span className={styles.sTxt}>
             {winner !== null
-              ? `${PLAYERS[winner].name} wins with ${scores[winner]} regions!`
-              : `Draw — ${scores[0]} each.`}
+              ? `${players[winner].name} wins with ${scores[winner]} regions!`
+              : `${results.winners.map(i => players[i].name).join(" & ")} draw with ${results.maxScore} regions${results.losers.length ? ` · ${results.losers.map(i => players[i].name).join(", ")} lost` : ""}`}
           </span>
         ) : (
           <span className={styles.sTxt}>
-            <span style={{ color: PLAYERS[cp].color }}>{PLAYERS[cp].name}</span>
+            <span style={{ color: players[cp].color }}>{players[cp].name}</span>
             {" — claim a region not edge-touching your opponent's"}
           </span>
         )}

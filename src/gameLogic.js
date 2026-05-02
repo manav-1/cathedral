@@ -237,7 +237,17 @@ export function getValidMoves(cp, claimed, regions) {
 }
 
 // ── Players ───────────────────────────────────────────────────────────────────
-export const PLAYERS = [
-  { id: 0, name: "Player 1", color: "#b83232", light: "#e74c3c28", glow: "#e74c3c" },
-  { id: 1, name: "Player 2", color: "#1660a0", light: "#3498db28", glow: "#3498db" },
+const PLAYER_PALETTE = [
+  { color: "#b83232", light: "#e74c3c28", glow: "#e74c3c" },  // Red
+  { color: "#1660a0", light: "#3498db28", glow: "#3498db" },  // Blue
+  { color: "#1a8a4a", light: "#2ecc7128", glow: "#2ecc71" },  // Green
+  { color: "#8a32b8", light: "#9b59b628", glow: "#9b59b6" },  // Purple
 ];
+
+export function getPlayers(count) {
+  return PLAYER_PALETTE.slice(0, count).map((p, i) => ({
+    id: i,
+    name: `Player ${i + 1}`,
+    ...p,
+  }));
+}
