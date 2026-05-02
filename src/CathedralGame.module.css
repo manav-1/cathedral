@@ -1,0 +1,317 @@
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* CATHEDRAL — Game Component Styles                                          */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+.root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: radial-gradient(ellipse at 50% 10%, #1a1208 0%, #080604 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 16px 36px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #d4b483;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.header {
+  text-align: center;
+  margin-bottom: 18px;
+  animation: fadeInUp 0.6s ease;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: center;
+}
+
+.title {
+  font-family: 'Cinzel', 'Palatino Linotype', Palatino, Georgia, serif;
+  font-size: clamp(22px, 6vw, 32px);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  margin: 0;
+  color: #C8A96E;
+  text-shadow: 0 0 28px #C8A96E44;
+}
+
+.cross {
+  font-size: 18px;
+  color: #7a5a14;
+}
+
+.subtitle {
+  font-size: 10px;
+  letter-spacing: 0.35em;
+  color: #5a4020;
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+/* ── Scoreboard ──────────────────────────────────────────────────────────── */
+
+.scoreboard {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  width: 100%;
+  max-width: 420px;
+  animation: fadeInUp 0.6s ease 0.1s both;
+}
+
+.card {
+  flex: 1;
+  background: transparent;
+  border: 1.5px solid;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.cardActive {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pname {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #d4b483;
+}
+
+.pscore {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.pip {
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ── Board ───────────────────────────────────────────────────────────────── */
+
+.boardWrap {
+  width: 100%;
+  max-width: 420px;
+  filter: drop-shadow(0 12px 50px #000000dd);
+  animation: fadeInUp 0.6s ease 0.2s both;
+}
+
+.svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Status ──────────────────────────────────────────────────────────────── */
+
+.status {
+  margin-top: 14px;
+  max-width: 400px;
+  text-align: center;
+  animation: fadeInUp 0.6s ease 0.3s both;
+}
+
+.sTxt {
+  font-size: 13px;
+  color: #9a7235;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+
+/* ── Controls ────────────────────────────────────────────────────────────── */
+
+.controls {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  animation: fadeInUp 0.6s ease 0.4s both;
+}
+
+.btn {
+  background: none;
+  border: 1.5px solid #7a5a14;
+  color: #C8A96E;
+  padding: 8px 22px;
+  border-radius: 6px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.btn:hover {
+  background: #1a120433;
+  border-color: #C8A96E;
+  box-shadow: 0 0 12px #C8A96E33;
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+/* ── Legend ───────────────────────────────────────────────────────────────── */
+
+.legend {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  animation: fadeInUp 0.6s ease 0.5s both;
+}
+
+.legendItem {
+  font-size: 10px;
+  color: #4a3415;
+  letter-spacing: 0.03em;
+}
+
+.legendDot {
+  color: #2a1e08;
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* ── Mobile Responsive ───────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .root {
+    padding: 14px 10px 28px;
+  }
+
+  .title {
+    font-size: 22px;
+    letter-spacing: 0.18em;
+  }
+
+  .scoreboard {
+    gap: 8px;
+  }
+
+  .card {
+    padding: 8px 8px;
+    gap: 6px;
+  }
+
+  .pname {
+    font-size: 11px;
+  }
+
+  .pscore {
+    font-size: 18px;
+  }
+
+  .pip {
+    font-size: 8px;
+    padding: 2px 5px;
+    top: -9px;
+    right: 4px;
+  }
+
+  .btn {
+    padding: 10px 16px;
+    font-size: 11px;
+  }
+
+  .sTxt {
+    font-size: 12px;
+  }
+
+  .legend {
+    gap: 6px;
+  }
+
+  .legendItem {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 360px) {
+  .title {
+    font-size: 18px;
+    letter-spacing: 0.14em;
+  }
+
+  .cross {
+    font-size: 14px;
+  }
+
+  .card {
+    padding: 6px 6px;
+    gap: 4px;
+  }
+
+  .pscore {
+    font-size: 16px;
+  }
+}
+
+/* ── Landscape mobile ────────────────────────────────────────────────────── */
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .root {
+    padding: 8px 16px 16px;
+  }
+
+  .header {
+    margin-bottom: 8px;
+  }
+
+  .scoreboard {
+    margin-bottom: 8px;
+  }
+
+  .boardWrap {
+    max-width: 320px;
+  }
+
+  .status {
+    margin-top: 8px;
+  }
+
+  .controls {
+    margin-top: 8px;
+  }
+
+  .legend {
+    margin-top: 8px;
+  }
+}
+
+/* ── Animation from index.css ────────────────────────────────────────────── */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
