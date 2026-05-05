@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // CATHEDRAL — Online Multiplayer Hook (PeerJS / WebRTC)
+// Supports 2-4 players: host manages star topology connections
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useState, useRef, useCallback, useEffect } from "react";
@@ -22,7 +23,6 @@ export function getRoomFromUrl() {
 export function buildRoomUrl(roomId) {
   const url = new URL(window.location.href);
   url.searchParams.set("room", roomId);
-  // Remove hash if any
   url.hash = "";
   return url.toString();
 }
@@ -31,7 +31,7 @@ export function buildRoomUrl(roomId) {
 export const STATUS = {
   IDLE: "idle",
   CREATING: "creating",
-  WAITING: "waiting",       // host waiting for peer
+  WAITING: "waiting",       // host waiting for peers
   CONNECTING: "connecting", // joiner connecting to host
   CONNECTED: "connected",
   DISCONNECTED: "disconnected",
@@ -41,11 +41,12 @@ export const STATUS = {
 // Message types
 const MSG = {
   JOIN: "join",           // joiner → host: { name }
-  WELCOME: "welcome",     // host → joiner: { hostName, seed }
+  WELCOME: "welcome",     // host → joiner: { hostName, playerIndex, playerNames, maxPlayers }
+  PLAYER_UPDATE: "player_update", // host → all: { playerNames }
   MOVE: "move",           // joiner → host: { regionId }
-  STATE: "state",         // host → joiner: { claimed, currentPlayer, scores, eliminated, lastClaimed, gameOver }
-  RESTART: "restart",     // either → either: request restart
-  NEW_BOARD: "new_board", // host → joiner: { seed, state }
+  STATE: "state",         // host → all joiners: { claimed, currentPlayer, scores, eliminated, lastClaimed, gameOver }
+  RESTART: "restart",     // host → all: request restart
+  NEW_BOARD: "new_board", // host → all: { seed }
 };
 
 export function useMultiplayer() {
@@ -53,76 +54,145 @@ export function useMultiplayer() {
   const [roomId, setRoomId] = useState(null);
   const [isHost, setIsHost] = useState(false);
   const [myName, setMyName] = useState("");
-  const [peerName, setPeerName] = useState("");
+  const [myPlayerIndex, setMyPlayerIndex] = useState(0); // host=0, joiners get assigned
+  const [maxPlayers, setMaxPlayers] = useState(2);
+  // Map of playerIndex → name for all players
+  const [playerNames, setPlayerNames] = useState({});
+  const [connectedCount, setConnectedCount] = useState(0);
   const [error, setError] = useState(null);
 
   const peerRef = useRef(null);
+  // For host: array of connections (indexed by playerIndex - 1, since host is 0)
+  const connsRef = useRef([]);
+  // For joiner: single connection to host
   const connRef = useRef(null);
   const onMessageRef = useRef(null);
+  const playerNamesRef = useRef({});
+  const nextPlayerIndexRef = useRef(1); // next index to assign to joining player
 
   // Set message handler
   const setOnMessage = useCallback((handler) => {
     onMessageRef.current = handler;
   }, []);
 
-  // Send data to peer
-  const send = useCallback((data) => {
-    const conn = connRef.current;
-    if (conn && conn.open) {
-      conn.send(data);
+  // Host: broadcast data to all connected joiners
+  const broadcast = useCallback((data) => {
+    for (const entry of connsRef.current) {
+      if (entry && entry.conn && entry.conn.open) {
+        entry.conn.send(data);
+      }
     }
   }, []);
 
-  // Setup connection event handlers
-  const setupConnection = useCallback((conn, hosting) => {
-    connRef.current = conn;
+  // Send data — host broadcasts to all, joiner sends to host
+  const send = useCallback((data) => {
+    if (connsRef.current.length > 0) {
+      // Host: broadcast to all
+      broadcast(data);
+    } else if (connRef.current && connRef.current.open) {
+      // Joiner: send to host
+      connRef.current.send(data);
+    }
+  }, [broadcast]);
+
+  // Host: handle a new joiner connection
+  const handleHostConnection = useCallback((conn, hostName, maxP) => {
+    const playerIndex = nextPlayerIndexRef.current;
+
+    if (playerIndex >= maxP) {
+      // Room is full — reject by closing
+      conn.on("open", () => {
+        conn.send({ type: "room_full" });
+        setTimeout(() => conn.close(), 200);
+      });
+      return;
+    }
+
+    nextPlayerIndexRef.current = playerIndex + 1;
+
+    const entry = { conn, playerIndex, name: null };
+    connsRef.current.push(entry);
 
     conn.on("open", () => {
-      setStatus(STATUS.CONNECTED);
-      if (!hosting) {
-        // Joiner sends their name
-        conn.send({ type: MSG.JOIN, name: myName || "Player 2" });
-      }
+      // Wait for JOIN message
     });
 
     conn.on("data", (data) => {
-      if (data.type === MSG.JOIN && hosting) {
-        setPeerName(data.name || "Player 2");
-        // Host sends welcome with their name
-        conn.send({ type: MSG.WELCOME, hostName: myName || "Player 1" });
-      } else if (data.type === MSG.WELCOME && !hosting) {
-        setPeerName(data.hostName || "Player 1");
+      if (data.type === MSG.JOIN) {
+        entry.name = data.name || `Player ${playerIndex + 1}`;
+
+        // Update player names
+        const names = { ...playerNamesRef.current, [playerIndex]: entry.name };
+        playerNamesRef.current = names;
+        setPlayerNames({ ...names });
+        setConnectedCount(connsRef.current.filter(e => e.name !== null).length);
+
+        // Send welcome to this joiner
+        conn.send({
+          type: MSG.WELCOME,
+          hostName: hostName,
+          playerIndex: playerIndex,
+          playerNames: names,
+          maxPlayers: maxP,
+        });
+
+        // Broadcast updated player list to ALL joiners
+        for (const e of connsRef.current) {
+          if (e.conn.open && e !== entry) {
+            e.conn.send({ type: MSG.PLAYER_UPDATE, playerNames: names });
+          }
+        }
       }
-      // Forward all messages to the game handler
+
+      // Forward all messages to the game handler, tagged with source player index
       if (onMessageRef.current) {
-        onMessageRef.current(data);
+        onMessageRef.current({ ...data, _fromPlayer: playerIndex });
       }
     });
 
     conn.on("close", () => {
-      setStatus(STATUS.DISCONNECTED);
+      // Remove this connection
+      connsRef.current = connsRef.current.filter(e => e !== entry);
+      setConnectedCount(connsRef.current.filter(e => e.name !== null).length);
+
+      // Broadcast disconnection to all remaining joiners
+      for (const e of connsRef.current) {
+        if (e.conn && e.conn.open) {
+          e.conn.send({ type: "player_disconnected", playerIndex });
+        }
+      }
+
+      // Notify host's own game handler
+      if (onMessageRef.current) {
+        onMessageRef.current({ type: "player_disconnected", playerIndex });
+      }
     });
 
     conn.on("error", (err) => {
-      console.error("Connection error:", err);
-      setError("Connection lost");
-      setStatus(STATUS.ERROR);
+      console.error(`Connection error (player ${playerIndex}):`, err);
     });
-  }, [myName]);
+  }, []);
 
   // Create a room (host)
-  const createRoom = useCallback((name) => {
-    setMyName(name || "Player 1");
+  const createRoom = useCallback((name, numPlayers) => {
+    const hostName = name || "Player 1";
+    setMyName(hostName);
     setIsHost(true);
+    setMyPlayerIndex(0);
+    setMaxPlayers(numPlayers || 2);
     setStatus(STATUS.CREATING);
     setError(null);
+
+    const names = { 0: hostName };
+    playerNamesRef.current = names;
+    setPlayerNames(names);
+    nextPlayerIndexRef.current = 1;
+    connsRef.current = [];
 
     const id = generateRoomId();
     setRoomId(id);
 
-    const peer = new Peer(PEER_PREFIX + id, {
-      debug: 0,
-    });
+    const peer = new Peer(PEER_PREFIX + id, { debug: 0 });
     peerRef.current = peer;
 
     peer.on("open", () => {
@@ -130,20 +200,19 @@ export function useMultiplayer() {
     });
 
     peer.on("connection", (conn) => {
-      setupConnection(conn, true);
+      handleHostConnection(conn, hostName, numPlayers || 2);
     });
 
     peer.on("error", (err) => {
       console.error("Peer error:", err);
       if (err.type === "unavailable-id") {
-        // Room ID collision, try again
         peer.destroy();
         const newId = generateRoomId();
         setRoomId(newId);
         const newPeer = new Peer(PEER_PREFIX + newId, { debug: 0 });
         peerRef.current = newPeer;
         newPeer.on("open", () => setStatus(STATUS.WAITING));
-        newPeer.on("connection", (c) => setupConnection(c, true));
+        newPeer.on("connection", (c) => handleHostConnection(c, hostName, numPlayers || 2));
         newPeer.on("error", (e) => {
           setError(`Failed to create room: ${e.message}`);
           setStatus(STATUS.ERROR);
@@ -155,11 +224,12 @@ export function useMultiplayer() {
     });
 
     return id;
-  }, [setupConnection]);
+  }, [handleHostConnection]);
 
   // Join an existing room
   const joinRoom = useCallback((targetRoomId, name) => {
-    setMyName(name || "Player 2");
+    const joinerName = name || "Player";
+    setMyName(joinerName);
     setIsHost(false);
     setRoomId(targetRoomId);
     setStatus(STATUS.CONNECTING);
@@ -172,7 +242,41 @@ export function useMultiplayer() {
       const conn = peer.connect(PEER_PREFIX + targetRoomId, {
         reliable: true,
       });
-      setupConnection(conn, false);
+      connRef.current = conn;
+
+      conn.on("open", () => {
+        setStatus(STATUS.CONNECTED);
+        conn.send({ type: MSG.JOIN, name: joinerName });
+      });
+
+      conn.on("data", (data) => {
+        if (data.type === MSG.WELCOME) {
+          setMyPlayerIndex(data.playerIndex);
+          setMaxPlayers(data.maxPlayers);
+          setPlayerNames(data.playerNames);
+        } else if (data.type === MSG.PLAYER_UPDATE) {
+          setPlayerNames(data.playerNames);
+        } else if (data.type === "room_full") {
+          setError("Room is full.");
+          setStatus(STATUS.ERROR);
+          return;
+        }
+
+        // Forward to game handler
+        if (onMessageRef.current) {
+          onMessageRef.current(data);
+        }
+      });
+
+      conn.on("close", () => {
+        setStatus(STATUS.DISCONNECTED);
+      });
+
+      conn.on("error", (err) => {
+        console.error("Connection error:", err);
+        setError("Connection lost");
+        setStatus(STATUS.ERROR);
+      });
     });
 
     peer.on("error", (err) => {
@@ -184,10 +288,17 @@ export function useMultiplayer() {
       }
       setStatus(STATUS.ERROR);
     });
-  }, [setupConnection]);
+  }, []);
 
   // Disconnect and cleanup
   const disconnect = useCallback(() => {
+    // Close all host connections
+    for (const entry of connsRef.current) {
+      if (entry.conn) entry.conn.close();
+    }
+    connsRef.current = [];
+
+    // Close joiner connection
     if (connRef.current) {
       connRef.current.close();
       connRef.current = null;
@@ -198,8 +309,11 @@ export function useMultiplayer() {
     }
     setStatus(STATUS.IDLE);
     setRoomId(null);
-    setPeerName("");
+    setPlayerNames({});
+    setConnectedCount(0);
     setError(null);
+    playerNamesRef.current = {};
+    nextPlayerIndexRef.current = 1;
     // Clear room param from URL
     const url = new URL(window.location.href);
     url.searchParams.delete("room");
@@ -209,6 +323,9 @@ export function useMultiplayer() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      for (const entry of connsRef.current) {
+        if (entry.conn) entry.conn.close();
+      }
       if (connRef.current) connRef.current.close();
       if (peerRef.current) peerRef.current.destroy();
     };
@@ -219,12 +336,16 @@ export function useMultiplayer() {
     roomId,
     isHost,
     myName,
-    peerName,
+    myPlayerIndex,
+    maxPlayers,
+    playerNames,
+    connectedCount,
     error,
     createRoom,
     joinRoom,
     disconnect,
     send,
+    broadcast,
     setOnMessage,
     MSG,
   };

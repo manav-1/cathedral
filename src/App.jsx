@@ -14,11 +14,13 @@ export default function App() {
   const [mode, setMode] = useState(urlRoom ? "online" : null); // null = mode selection, "local", "online"
   const [onlineGameStarted, setOnlineGameStarted] = useState(false);
   const [onlineSeed, setOnlineSeed] = useState(null);
+  const [onlinePlayerCount, setOnlinePlayerCount] = useState(2);
 
   const multiplayer = useMultiplayer();
 
-  const handleStartOnlineGame = useCallback((seed, isHostStarting) => {
+  const handleStartOnlineGame = useCallback((seed, playerCount, isHostStarting) => {
     setOnlineSeed(seed);
+    setOnlinePlayerCount(playerCount);
     setOnlineGameStarted(true);
   }, []);
 
@@ -26,6 +28,7 @@ export default function App() {
     multiplayer.disconnect();
     setOnlineGameStarted(false);
     setOnlineSeed(null);
+    setOnlinePlayerCount(2);
     setMode(null);
   }, [multiplayer]);
 
@@ -41,6 +44,7 @@ export default function App() {
         <CathedralGame
           multiplayer={multiplayer}
           onlineSeed={onlineSeed}
+          onlinePlayerCount={onlinePlayerCount}
           onLeave={handleLeaveOnlineGame}
         />
       );
@@ -82,7 +86,7 @@ export default function App() {
           <span className={styles.modeIcon}>🌐</span>
           <div className={styles.modeTitle}>Play Online</div>
           <div className={styles.modeDesc}>
-            Create a room and share the link — play 1v1 with anyone, anywhere
+            Create a room and share the link — play with 2–4 players online
           </div>
         </div>
       </div>

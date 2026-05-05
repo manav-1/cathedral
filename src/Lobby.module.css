@@ -398,20 +398,56 @@
   text-transform: uppercase;
 }
 
+/* ── Player Count Selector ───────────────────────────────────────────────── */
+
+.playerCountRow {
+  display: flex;
+  gap: 8px;
+}
+
+.playerCountBtn {
+  flex: 1;
+  background: none;
+  border: 1px solid #2a1e0e;
+  color: #5a4020;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.playerCountBtn:hover {
+  border-color: #7a5a14;
+  color: #C8A96E;
+}
+
+.playerCountActive {
+  border-color: #C8A96E;
+  color: #C8A96E;
+  background: #C8A96E14;
+  box-shadow: 0 0 10px #C8A96E22;
+}
+
 /* ── Players Ready ──────────────────────────────────────────────────────── */
 
 .playersReady {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   margin: 16px 0;
+  flex-wrap: wrap;
 }
 
 .playerSlot {
-  flex: 1;
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
   background: #0a0806;
   border: 1.5px solid #2a1e0e;
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px 8px;
   text-align: center;
   transition: all 0.3s;
 }

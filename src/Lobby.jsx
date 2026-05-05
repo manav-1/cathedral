@@ -4,67 +4,57 @@ import styles from "./Lobby.module.css";
 
 export default function Lobby({ multiplayer, onStartGame, onBack }) {
   const {
-    status, roomId, isHost, myName, peerName, error,
+    status, roomId, isHost, myName, myPlayerIndex, maxPlayers,
+    playerNames, connectedCount, error,
     createRoom, joinRoom, disconnect, send, setOnMessage,
   } = multiplayer;
 
   const [name, setName] = useState("");
   const [roomInput, setRoomInput] = useState("");
   const [copied, setCopied] = useState(false);
-  const [view, setView] = useState("menu"); // menu | create | join
-  const [gameReady, setGameReady] = useState(false);
+  const [view, setView] = useState("menu"); // menu | create | join_name | join
+  const [selectedPlayerCount, setSelectedPlayerCount] = useState(2);
 
-  // If joining from URL, go straight to join view
+  // If joining from URL, show name entry first
   const urlRoom = new URLSearchParams(window.location.search).get("room");
   useEffect(() => {
     if (urlRoom && view === "menu") {
       setRoomInput(urlRoom);
-      setView("join");
+      setView("join_name");
     }
   }, [urlRoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for welcome/seed messages
+  // Listen for messages in lobby
   useEffect(() => {
     setOnMessage((data) => {
-      if (data.type === MSG.WELCOME || data.type === MSG.JOIN) {
-        // Connection established — peer name handled by hook
-      }
       if (data.type === "start_game") {
-        setGameReady(true);
-        onStartGame(data.seed, false);
+        onStartGame(data.seed, data.playerCount, false);
       }
     });
   }, [setOnMessage, onStartGame]);
 
-  // Auto-start when both connected (for host)
-  useEffect(() => {
-    if (status === STATUS.CONNECTED && isHost && !gameReady) {
-      // Small delay so the joiner's name can arrive
-      const t = setTimeout(() => setGameReady(true), 600);
-      return () => clearTimeout(t);
-    }
-  }, [status, isHost, gameReady]);
+  // Join handler — connects and transitions to join view
+  const handleJoinConnect = useCallback(() => {
+    const code = roomInput.trim().toLowerCase();
+    if (!code) return;
+    const playerName = name.trim() || "Player";
+    joinRoom(code, playerName);
+    setView("join");
+  }, [roomInput, name, joinRoom]);
 
   const handleCreate = () => {
     const playerName = name.trim() || "Player 1";
-    createRoom(playerName);
+    createRoom(playerName, selectedPlayerCount);
     setView("create");
   };
 
-  const handleJoin = () => {
+  // Menu join shortcut — goes to name entry if no name, otherwise connects directly
+  const handleMenuJoin = () => {
     const code = roomInput.trim().toLowerCase();
     if (!code) return;
-    const playerName = name.trim() || "Player 2";
-    joinRoom(code, playerName);
+    setRoomInput(code);
+    setView("join_name");
   };
-
-  // Auto-join if we came from URL
-  useEffect(() => {
-    if (view === "join" && urlRoom && status === STATUS.IDLE) {
-      const playerName = name.trim() || "Player 2";
-      joinRoom(urlRoom, playerName);
-    }
-  }, [view, urlRoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCopy = async () => {
     const url = buildRoomUrl(roomId);
@@ -73,7 +63,6 @@ export default function Lobby({ multiplayer, onStartGame, onBack }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback
       const ta = document.createElement("textarea");
       ta.value = url;
       document.body.appendChild(ta);
@@ -87,18 +76,52 @@ export default function Lobby({ multiplayer, onStartGame, onBack }) {
 
   const handleStartGame = () => {
     const seed = Math.floor(Math.random() * 99999);
-    send({ type: "start_game", seed });
-    onStartGame(seed, true);
+    // Count total players: host + connected joiners
+    const totalPlayers = 1 + connectedCount;
+    send({ type: "start_game", seed, playerCount: totalPlayers });
+    onStartGame(seed, totalPlayers, true);
   };
 
   const handleBack = () => {
     disconnect();
     if (view !== "menu") {
       setView("menu");
-      setGameReady(false);
     } else {
       onBack();
     }
+  };
+
+  // Total connected (including host)
+  const totalPlayers = isHost ? 1 + connectedCount : Object.keys(playerNames).length;
+  const canStart = isHost && totalPlayers >= 2;
+
+  // Build player slot display
+  const renderPlayerSlots = () => {
+    const slots = [];
+    const count = isHost ? maxPlayers : (maxPlayers || 4);
+    for (let i = 0; i < count; i++) {
+      const pName = playerNames[i];
+      const isMe = i === myPlayerIndex;
+      const filled = !!pName;
+      slots.push(
+        <div
+          key={i}
+          className={`${styles.playerSlot} ${filled ? styles.playerSlotFilled : ""}`}
+        >
+          <div className={styles.slotLabel}>
+            Player {i + 1}
+            {isMe && " (You)"}
+            {i === 0 && !isMe && " (Host)"}
+          </div>
+          {filled ? (
+            <div className={styles.slotName}>{pName}</div>
+          ) : (
+            <div className={styles.slotEmpty}>Waiting...</div>
+          )}
+        </div>
+      );
+    }
+    return slots;
   };
 
   return (
@@ -132,6 +155,22 @@ export default function Lobby({ multiplayer, onStartGame, onBack }) {
               />
             </div>
 
+            {/* Player Count Selector */}
+            <div className={styles.nameGroup}>
+              <label className={styles.label}>Room Size</label>
+              <div className={styles.playerCountRow}>
+                {[2, 3, 4].map(n => (
+                  <button
+                    key={n}
+                    className={`${styles.playerCountBtn} ${selectedPlayerCount === n ? styles.playerCountActive : ""}`}
+                    onClick={() => setSelectedPlayerCount(n)}
+                  >
+                    {n} Players
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className={styles.actions}>
               <button className={styles.createBtn} onClick={handleCreate}>
                 ✦ Create Room
@@ -148,13 +187,13 @@ export default function Lobby({ multiplayer, onStartGame, onBack }) {
                   className={styles.roomInput}
                   type="text"
                   value={roomInput}
-                  onChange={e => setRoomInput(e.target.value.toLowerCase())}
+                  onChange={e => setRoomInput(e.target.value.toLowerCase().trim())}
                   placeholder="Room code..."
                   maxLength={10}
                 />
                 <button
                   className={styles.goBtn}
-                  onClick={() => { setView("join"); handleJoin(); }}
+                  onClick={handleMenuJoin}
                   disabled={!roomInput.trim()}
                 >
                   Join
@@ -172,20 +211,35 @@ export default function Lobby({ multiplayer, onStartGame, onBack }) {
         {view === "create" && (
           <div className={styles.waitingWrap}>
             <div className={styles.lobbyTitle}>
-              {status === STATUS.CONNECTED ? "Player Connected!" : "Waiting for Player..."}
+              {totalPlayers >= maxPlayers
+                ? "Room Full!"
+                : `Waiting for Players (${totalPlayers}/${maxPlayers})`}
             </div>
 
-            {(status === STATUS.CREATING || status === STATUS.WAITING) && (
+            {status !== STATUS.ERROR && (
               <>
-                <div className={styles.connStatus + " " + styles.statusConnecting}>
-                  <span className={styles.connDot} />
-                  Waiting for opponent...
-                </div>
+                {totalPlayers < maxPlayers && (
+                  <>
+                    <div className={styles.connStatus + " " + styles.statusConnecting}>
+                      <span className={styles.connDot} />
+                      {connectedCount === 0
+                        ? "Waiting for players to join..."
+                        : `${connectedCount} player${connectedCount > 1 ? "s" : ""} connected, waiting for more...`}
+                    </div>
 
-                <div className={styles.spinner} />
+                    {connectedCount === 0 && <div className={styles.spinner} />}
+                  </>
+                )}
+
+                {totalPlayers >= maxPlayers && (
+                  <div className={styles.connStatus + " " + styles.statusConnected}>
+                    <span className={styles.connDot} />
+                    All players connected!
+                  </div>
+                )}
 
                 <p className={styles.statusText}>
-                  Share this link with your opponent:
+                  Share this link with other players:
                 </p>
 
                 <div className={styles.linkBox}>
@@ -197,30 +251,16 @@ export default function Lobby({ multiplayer, onStartGame, onBack }) {
                     {copied ? "✓ Copied" : "Copy"}
                   </button>
                 </div>
-              </>
-            )}
-
-            {status === STATUS.CONNECTED && (
-              <>
-                <div className={styles.connStatus + " " + styles.statusConnected}>
-                  <span className={styles.connDot} />
-                  Connected
-                </div>
 
                 <div className={styles.playersReady}>
-                  <div className={`${styles.playerSlot} ${styles.playerSlotFilled}`}>
-                    <div className={styles.slotLabel}>Player 1 (You)</div>
-                    <div className={styles.slotName}>{name.trim() || "Player 1"}</div>
-                  </div>
-                  <div className={`${styles.playerSlot} ${styles.playerSlotFilled}`}>
-                    <div className={styles.slotLabel}>Player 2</div>
-                    <div className={styles.slotName}>{peerName || "Connected"}</div>
-                  </div>
+                  {renderPlayerSlots()}
                 </div>
 
-                <button className={styles.startBtn} onClick={handleStartGame}>
-                  ⚔ Start Game
-                </button>
+                {canStart && (
+                  <button className={styles.startBtn} onClick={handleStartGame}>
+                    ⚔ Start Game ({totalPlayers} Players)
+                  </button>
+                )}
               </>
             )}
 
@@ -238,6 +278,36 @@ export default function Lobby({ multiplayer, onStartGame, onBack }) {
               ← Cancel
             </button>
           </div>
+        )}
+
+        {/* ── Join Name Entry ──────────────────────────────── */}
+        {view === "join_name" && (
+          <>
+            <div className={styles.lobbyTitle}>Join Game</div>
+
+            <div className={styles.nameGroup}>
+              <label className={styles.label}>Your Name</label>
+              <input
+                className={styles.nameInput}
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Enter your name..."
+                maxLength={20}
+                autoFocus
+                onKeyDown={e => e.key === "Enter" && handleJoinConnect()}
+              />
+            </div>
+
+            <div className={styles.actions}>
+              <button className={styles.createBtn} onClick={handleJoinConnect}>
+                ⚔ Join Game
+              </button>
+              <button className={styles.backBtn} onClick={handleBack}>
+                ← Cancel
+              </button>
+            </div>
+          </>
         )}
 
         {/* ── Join View ─────────────────────────────────────── */}
@@ -265,14 +335,7 @@ export default function Lobby({ multiplayer, onStartGame, onBack }) {
                 </div>
 
                 <div className={styles.playersReady}>
-                  <div className={`${styles.playerSlot} ${styles.playerSlotFilled}`}>
-                    <div className={styles.slotLabel}>Player 1 (Host)</div>
-                    <div className={styles.slotName}>{peerName || "Host"}</div>
-                  </div>
-                  <div className={`${styles.playerSlot} ${styles.playerSlotFilled}`}>
-                    <div className={styles.slotLabel}>Player 2 (You)</div>
-                    <div className={styles.slotName}>{name.trim() || "Player 2"}</div>
-                  </div>
+                  {renderPlayerSlots()}
                 </div>
 
                 <p className={styles.statusText}>Waiting for host to start the game...</p>

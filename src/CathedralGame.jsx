@@ -6,12 +6,12 @@ import {
 import { STATUS, MSG } from "./useMultiplayer.js";
 import styles from "./CathedralGame.module.css";
 
-export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack }) {
+export default function CathedralGame({ multiplayer, onlineSeed, onlinePlayerCount, onLeave, onBack }) {
   const isOnline = !!multiplayer;
   const isHost = multiplayer?.isHost ?? false;
-  const myPlayerIndex = isOnline ? (isHost ? 0 : 1) : null;
+  const myPlayerIndex = isOnline ? multiplayer.myPlayerIndex : null;
 
-  const [playerCount, setPlayerCount] = useState(isOnline ? 2 : 2);
+  const [playerCount, setPlayerCount] = useState(isOnline ? (onlinePlayerCount || 2) : 2);
   const [boardSeed, setBoardSeed] = useState(isOnline ? (onlineSeed || 42) : 42);
 
   const players = useMemo(() => getPlayers(playerCount), [playerCount]);
@@ -31,14 +31,10 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
   const [lastClaimed, setLastClaimed] = useState(null);
   const [prevSeed, setPrevSeed] = useState(boardSeed);
   const [prevPlayerCount, setPrevPlayerCount] = useState(playerCount);
-  const [disconnected, setDisconnected] = useState(false);
+  const [disconnectedPlayers, setDisconnectedPlayers] = useState(new Set());
 
-  // Online player names
-  const myName = isOnline ? (multiplayer.myName || (isHost ? "Player 1" : "Player 2")) : null;
-  const opponentName = isOnline ? (multiplayer.peerName || (isHost ? "Player 2" : "Player 1")) : null;
-
-  // Ref to track if we've set up message handler
-  const messageHandlerSet = useRef(false);
+  // Online player names — from multiplayer hook's playerNames map
+  const onlinePlayerNames = isOnline ? multiplayer.playerNames : {};
 
   // Reset when board seed or player count changes
   if (prevSeed !== boardSeed || prevPlayerCount !== playerCount) {
@@ -60,13 +56,13 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
       const p = (from + i) % playerCount;
       if (!elim[p] && getValidMoves(p, nc, regions).length) return p;
     }
-    return -1; // no one can move
+    return -1;
   }, [playerCount, regions]);
 
-  // Core move processing logic (used by both local and online host)
+  // Core move processing logic
   const processMove = useCallback((id, cp, currentClaimed, currentScores, currentEliminated) => {
     if (!isValidMove(id, cp, currentClaimed, regions)) {
-      return null; // invalid
+      return null;
     }
     const nc = { ...currentClaimed, [id]: cp };
     const ns = [...currentScores];
@@ -115,7 +111,7 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
     if (isOnline && currentPlayer !== myPlayerIndex) return;
 
     if (isOnline && !isHost) {
-      // Joiner: send move request to host
+      // Non-host: send move request to host
       if (!isValidMove(id, currentPlayer, claimed, regions)) {
         setInvalid(id);
         setTimeout(() => setInvalid(null), 500);
@@ -135,60 +131,19 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
 
     applyState(result);
 
-    // Host: broadcast state to joiner
+    // Host: broadcast state to all joiners
     if (isOnline && isHost) {
       multiplayer.send({ type: MSG.STATE, ...result });
     }
   }, [claimed, currentPlayer, gameOver, scores, eliminated, regions, isOnline, isHost, myPlayerIndex, multiplayer, processMove, applyState]);
 
-  // Setup online message handler
-  useEffect(() => {
-    if (!isOnline || messageHandlerSet.current) return;
-    messageHandlerSet.current = true;
-
-    multiplayer.setOnMessage((data) => {
-      if (data.type === MSG.MOVE && isHost) {
-        // Host receives move from joiner — process it
-        setClaimed(prevClaimed => {
-          // We need to read current state via refs/state
-          // Use functional updates to get latest state
-          return prevClaimed; // placeholder, actual processing below
-        });
-      }
-
-      if (data.type === MSG.STATE && !isHost) {
-        // Joiner receives state from host — apply it
-        applyState(data);
-      }
-
-      if (data.type === MSG.RESTART) {
-        // Peer requested restart
-        setClaimed(prev => {
-          const fresh = {};
-          for (const key of Object.keys(prev)) fresh[key] = null;
-          return fresh;
-        });
-        setCurrentPlayer(0);
-        setHovered(null);
-        setInvalid(null);
-        setGameOver(false);
-        setScores(new Array(2).fill(0));
-        setEliminated(new Array(2).fill(false));
-        setLastClaimed(null);
-      }
-
-      if (data.type === MSG.NEW_BOARD && !isHost) {
-        setBoardSeed(data.seed);
-      }
-    });
-  }, [isOnline, isHost, multiplayer, applyState]);
-
-  // Better approach for host processing moves: use a ref-based handler
+  // Ref-based state for host to process async moves
   const stateRef = useRef({ claimed, currentPlayer, scores, eliminated, gameOver });
   useEffect(() => {
     stateRef.current = { claimed, currentPlayer, scores, eliminated, gameOver };
   }, [claimed, currentPlayer, scores, eliminated, gameOver]);
 
+  // Setup online message handler
   useEffect(() => {
     if (!isOnline) return;
 
@@ -208,11 +163,6 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
       }
 
       if (data.type === MSG.RESTART) {
-        setBoardSeed(prev => {
-          // Reset with current seed
-          return prev;
-        });
-        // Force re-init
         setClaimed(prev => {
           const fresh = {};
           for (const key of Object.keys(prev)) fresh[key] = null;
@@ -222,8 +172,8 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
         setHovered(null);
         setInvalid(null);
         setGameOver(false);
-        setScores(new Array(2).fill(0));
-        setEliminated(new Array(2).fill(false));
+        setScores(new Array(playerCount).fill(0));
+        setEliminated(new Array(playerCount).fill(false));
         setLastClaimed(null);
       }
 
@@ -233,16 +183,24 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
 
       if (data.type === "start_game") {
         setBoardSeed(data.seed);
+        if (data.playerCount) setPlayerCount(data.playerCount);
+      }
+
+      if (data.type === "player_disconnected") {
+        setDisconnectedPlayers(prev => new Set([...prev, data.playerIndex]));
       }
     });
-  }, [isOnline, isHost, multiplayer, processMove, applyState]);
+  }, [isOnline, isHost, multiplayer, processMove, applyState, playerCount]);
 
-  // Track disconnection
+  // Track host disconnection (for joiners)
   useEffect(() => {
-    if (isOnline && multiplayer.status === STATUS.DISCONNECTED) {
-      setDisconnected(true);
+    if (isOnline && !isHost && multiplayer.status === STATUS.DISCONNECTED) {
+      setDisconnectedPlayers(prev => new Set([...prev, -1])); // -1 = host disconnected
     }
-  }, [isOnline, multiplayer?.status]);
+  }, [isOnline, isHost, multiplayer?.status]);
+
+  const hostDisconnected = isOnline && !isHost && disconnectedPlayers.has(-1);
+  const anyDisconnected = disconnectedPlayers.size > 0;
 
   const resetGame = useCallback(() => {
     setClaimed(mkClaimed());
@@ -268,17 +226,17 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
   };
 
   const changePlayerCount = (n) => {
-    if (isOnline) return; // locked to 2 in online mode
+    if (isOnline) return;
     setPlayerCount(n);
     setBoardSeed(Math.floor(Math.random() * 99999));
   };
 
   const validMoves = gameOver ? [] : getValidMoves(currentPlayer, claimed, regions);
 
-  // Is it my turn? (for online mode UI)
+  // Is it my turn?
   const isMyTurn = isOnline ? currentPlayer === myPlayerIndex : true;
 
-  // Determine results — find top scorers and losers
+  // Determine results
   const results = useMemo(() => {
     if (!gameOver) return { winners: [], losers: [], maxScore: 0, isTie: false };
     const maxScore = Math.max(...scores);
@@ -295,11 +253,10 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
 
   const cp = currentPlayer;
 
-  // Player display names for online
+  // Get display name for a player index
   const getPlayerName = (idx) => {
     if (!isOnline) return players[idx].name;
-    if (idx === 0) return isHost ? myName : opponentName;
-    return isHost ? opponentName : myName;
+    return onlinePlayerNames[idx] || `Player ${idx + 1}`;
   };
 
   return (
@@ -312,20 +269,24 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
           <span className={styles.cross}>✛</span>
         </div>
         <p className={styles.subtitle}>
-          {isOnline ? "Online Match" : "Stained Glass Territory"}
+          {isOnline ? `Online Match · ${playerCount} Players` : "Stained Glass Territory"}
         </p>
       </header>
 
       {/* Online connection banner */}
       {isOnline && (
         <div className={styles.onlineBanner}>
-          {disconnected ? (
+          {hostDisconnected ? (
             <span className={styles.disconnectedBadge}>
-              <span className={styles.connDotRed} /> Opponent disconnected
+              <span className={styles.connDotRed} /> Host disconnected
+            </span>
+          ) : anyDisconnected ? (
+            <span className={styles.disconnectedBadge}>
+              <span className={styles.connDotRed} /> A player disconnected
             </span>
           ) : (
             <span className={styles.connectedBadge}>
-              <span className={styles.connDotGreen} /> vs {opponentName}
+              <span className={styles.connDotGreen} /> {playerCount} players connected
             </span>
           )}
         </div>
@@ -352,36 +313,40 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
           const isElim = eliminated[p.id];
           const isActive = !gameOver && cp === p.id;
           const isMe = isOnline && p.id === myPlayerIndex;
+          const isDisconn = isOnline && disconnectedPlayers.has(p.id);
           return (
             <div
               key={p.id}
-              className={`${styles.card} ${isActive ? styles.cardActive : ""} ${isElim ? styles.cardEliminated : ""}`}
+              className={`${styles.card} ${isActive && !isDisconn ? styles.cardActive : ""} ${isElim ? styles.cardEliminated : ""}`}
               style={{
-                borderColor: isElim ? "#333" : p.color,
-                opacity: isElim ? 0.35 : (!gameOver && cp !== p.id ? 0.45 : 1),
-                boxShadow: isActive
+                borderColor: isDisconn ? "#5a2020" : isElim ? "#333" : p.color,
+                opacity: isDisconn ? 0.4 : isElim ? 0.35 : (!gameOver && cp !== p.id ? 0.45 : 1),
+                boxShadow: isActive && !isDisconn
                   ? `0 0 24px ${p.glow}44, inset 0 0 10px ${p.glow}12` : "none",
               }}
             >
-              <div className={styles.dot} style={{ background: isElim ? "#444" : p.color, boxShadow: isElim ? "none" : `0 0 8px ${p.glow}` }} />
+              <div className={styles.dot} style={{ background: isDisconn ? "#5a2020" : isElim ? "#444" : p.color, boxShadow: isDisconn ? "0 0 6px #e74c3c" : isElim ? "none" : `0 0 8px ${p.glow}` }} />
               <div>
                 <div className={styles.pname}>
                   {getPlayerName(p.id)}
                   {isOnline && isMe && <span className={styles.youTag}> (you)</span>}
                 </div>
-                <div className={styles.pscore} style={{ color: isElim ? "#555" : p.color }}>{scores[p.id]}</div>
+                <div className={styles.pscore} style={{ color: isDisconn ? "#5a2020" : isElim ? "#555" : p.color }}>{scores[p.id]}</div>
               </div>
-              {isActive && (
+              {isDisconn && (
+                <div className={styles.pip} style={{ background: "#5a2020" }}>⚡ DISCONNECTED</div>
+              )}
+              {!isDisconn && isActive && (
                 <div className={styles.pip} style={{ background: p.color }}>
                   {isOnline ? (isMe ? "YOUR TURN" : "THEIR TURN") : "YOUR TURN"}
                 </div>
               )}
-              {isElim && !gameOver && (
+              {!isDisconn && isElim && !gameOver && (
                 <div className={styles.pip} style={{ background: "#444" }}>OUT</div>
               )}
               {gameOver && winner === p.id && (
                 <div className={styles.pip} style={{ background: p.color }}>
-                  {isOnline && isMe ? "YOU WIN ✦" : isOnline ? "THEY WIN" : "WINNER ✦"}
+                  {isOnline && isMe ? "YOU WIN ✦" : "WINNER ✦"}
                 </div>
               )}
               {gameOver && results.isTie && results.winners.includes(p.id) && (
@@ -418,7 +383,6 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
               const isVal = validMoves.includes(r.id);
               const isLast = lastClaimed === r.id;
 
-              // In online mode, dim valid move highlights when it's not your turn
               const showValid = isOnline ? (isMyTurn && isVal) : isVal;
 
               let fill = "#1e1408", stroke = "#8a6428", sw = 1.2;
@@ -460,15 +424,15 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
 
       {/* Status */}
       <div className={styles.status}>
-        {disconnected ? (
+        {hostDisconnected ? (
           <span className={styles.sTxt} style={{ color: "#e74c3c" }}>
-            Opponent disconnected — game ended
+            Host disconnected — game ended
           </span>
         ) : gameOver ? (
           <span className={styles.sTxt}>
             {winner !== null
               ? isOnline
-                ? (winner === myPlayerIndex ? `You win with ${scores[winner]} regions!` : `${opponentName} wins with ${scores[winner]} regions!`)
+                ? (winner === myPlayerIndex ? `You win with ${scores[winner]} regions!` : `${getPlayerName(winner)} wins with ${scores[winner]} regions!`)
                 : `${getPlayerName(winner)} wins with ${scores[winner]} regions!`
               : `${results.winners.map(i => getPlayerName(i)).join(" & ")} draw with ${results.maxScore} regions${results.losers.length ? ` · ${results.losers.map(i => getPlayerName(i)).join(", ")} lost` : ""}`}
           </span>
@@ -476,12 +440,12 @@ export default function CathedralGame({ multiplayer, onlineSeed, onLeave, onBack
           <span className={styles.sTxt}>
             {isOnline ? (
               isMyTurn ? (
-                <><span style={{ color: players[cp].color }}>Your turn</span>{" — claim a region not edge-touching your opponent's"}</>
+                <><span style={{ color: players[cp].color }}>Your turn</span>{" — claim a region not edge-touching opponents"}</>
               ) : (
-                <><span style={{ color: players[cp].color }}>{opponentName}</span>{" is thinking..."}</>
+                <><span style={{ color: players[cp].color }}>{getPlayerName(cp)}</span>{" is thinking..."}</>
               )
             ) : (
-              <><span style={{ color: players[cp].color }}>{getPlayerName(cp)}</span>{" — claim a region not edge-touching your opponent's"}</>
+              <><span style={{ color: players[cp].color }}>{getPlayerName(cp)}</span>{" — claim a region not edge-touching opponents"}</>
             )}
           </span>
         )}
