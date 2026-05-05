@@ -1,0 +1,161 @@
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* CATHEDRAL — App / Mode Selection Styles                                    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+.root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: radial-gradient(ellipse at 50% 10%, #1a1208 0%, #080604 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 22px 16px 36px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #d4b483;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.header {
+  text-align: center;
+  margin-bottom: 40px;
+  animation: fadeInUp 0.6s ease;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: center;
+}
+
+.title {
+  font-family: 'Cinzel', 'Palatino Linotype', Palatino, Georgia, serif;
+  font-size: clamp(26px, 7vw, 38px);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  margin: 0;
+  color: #C8A96E;
+  text-shadow: 0 0 28px #C8A96E44;
+}
+
+.cross {
+  font-size: 22px;
+  color: #7a5a14;
+}
+
+.subtitle {
+  font-size: 11px;
+  letter-spacing: 0.35em;
+  color: #5a4020;
+  margin-top: 5px;
+  text-transform: uppercase;
+}
+
+/* ── Mode Cards ─────────────────────────────────────────────────────────── */
+
+.modeCards {
+  display: flex;
+  gap: 16px;
+  max-width: 520px;
+  width: 100%;
+  animation: fadeInUp 0.6s ease 0.15s both;
+}
+
+.modeCard {
+  flex: 1;
+  background: linear-gradient(135deg, #14100a 0%, #0c0a06 100%);
+  border: 1.5px solid #2a1e0e;
+  border-radius: 14px;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.modeCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 50% 0%, #C8A96E08 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.modeCard:hover {
+  border-color: #7a5a14;
+  transform: translateY(-3px);
+  box-shadow: 0 8px 32px #00000088, 0 0 20px #C8A96E11;
+}
+
+.modeCard:hover::before {
+  opacity: 1;
+}
+
+.modeCard:active {
+  transform: scale(0.98);
+}
+
+.modeIcon {
+  font-size: 32px;
+  margin-bottom: 14px;
+  display: block;
+  filter: drop-shadow(0 0 8px #C8A96E33);
+}
+
+.modeTitle {
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #C8A96E;
+  margin-bottom: 8px;
+}
+
+.modeDesc {
+  font-size: 11px;
+  color: #6a5030;
+  line-height: 1.5;
+  letter-spacing: 0.03em;
+}
+
+/* ── Version ────────────────────────────────────────────────────────────── */
+
+.version {
+  margin-top: 32px;
+  font-size: 9px;
+  color: #2a1e0e;
+  letter-spacing: 0.1em;
+  animation: fadeInUp 0.6s ease 0.3s both;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Mobile ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .modeCards {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .modeCard {
+    padding: 22px 16px;
+  }
+
+  .title {
+    font-size: 24px;
+  }
+}

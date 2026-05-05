@@ -244,6 +244,62 @@
   line-height: 1;
 }
 
+/* ── Online Multiplayer ──────────────────────────────────────────────────── */
+
+.onlineBanner {
+  margin-bottom: 12px;
+  animation: fadeInUp 0.6s ease 0.08s both;
+}
+
+.connectedBadge,
+.disconnectedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+.connectedBadge {
+  background: #2ecc7112;
+  color: #2ecc71;
+  border: 1px solid #2ecc7122;
+}
+
+.disconnectedBadge {
+  background: #e74c3c12;
+  color: #e74c3c;
+  border: 1px solid #e74c3c22;
+}
+
+.connDotGreen {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2ecc71;
+  box-shadow: 0 0 6px #2ecc71;
+  flex-shrink: 0;
+}
+
+.connDotRed {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e74c3c;
+  box-shadow: 0 0 6px #e74c3c;
+  flex-shrink: 0;
+}
+
+.youTag {
+  font-size: 9px;
+  color: #7a6030;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
 /* ── Mobile Responsive ───────────────────────────────────────────────────── */
 
 @media (max-width: 480px) {
