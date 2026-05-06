@@ -2,11 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import CathedralGame from './CathedralGame.jsx';
 import Lobby from './Lobby.jsx';
 import { useMultiplayer, getRoomFromUrl, STATUS } from './useMultiplayer.js';
-import { inject } from '@vercel/analytics';
 import styles from './App.module.css';
-
-// Initialize Vercel Analytics
-inject();
 
 export default function App() {
   // Check if joining via URL
