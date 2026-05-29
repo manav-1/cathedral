@@ -305,6 +305,24 @@ export default function CathedralGame({
   const results = useMemo(() => {
     if (!gameOver)
       return { winners: [], losers: [], maxScore: 0, isTie: false };
+
+    const remainingMovePlayers = [];
+    for (let i = 0; i < playerCount; i++) {
+      if (getValidMoves(i, claimed, regions).length > 0) {
+        remainingMovePlayers.push(i);
+      }
+    }
+
+    if (remainingMovePlayers.length === 1) {
+      const winnerIndex = remainingMovePlayers[0];
+      return {
+        winners: [winnerIndex],
+        losers: Array.from({ length: playerCount }, (_, i) => i).filter(i => i !== winnerIndex),
+        maxScore: scores[winnerIndex],
+        isTie: false,
+      };
+    }
+
     const maxScore = Math.max(...scores);
     const winners = [];
     const losers = [];
@@ -313,7 +331,7 @@ export default function CathedralGame({
       else losers.push(i);
     }
     return { winners, losers, maxScore, isTie: winners.length > 1 };
-  }, [gameOver, scores, playerCount]);
+  }, [gameOver, scores, playerCount, claimed, regions]);
 
   const winner = results.winners.length === 1 ? results.winners[0] : null;
 
